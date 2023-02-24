@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<launch>
+
+	<!-- Launch mocap node -->
+	<include file="$(find mocap_optitrack)/launch/mocap.launch">
+	</include>
+
+<!-- aruco program to change to mocap convention -->
+<node pkg="offboard"
+        name="aruco_to_mocap"
+        type="aruco_to_mocap.py"
+        output="screen">
+</node>
+
+<!-- off board program for setpoints using aruco markers as target -->
+<node pkg="offboard"
+        name="offb_node_setpoints"
+        type="offb_node_setpoints.py"
+        output="screen">
+</node>
+
+</launch>
