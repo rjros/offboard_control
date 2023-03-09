@@ -9,6 +9,7 @@
 import time
 import rospy
 import numpy as np
+from math import pi
 import mavros
 from mavros import setpoint as SP
 from mavros.utils import *
@@ -20,15 +21,22 @@ from mavros_msgs.msg import *
 from mavros_msgs.srv import *
 
 #Variable for the PID ROlL
-P_roll=5
-I_roll=0
-D_roll=0
-max_roll=5
+P_roll=0
+I_roll=0.0
+D_roll=0.0
+max_roll=10
 #Variable for the PID pitch 
-P_pitch=5
-I_pitch=0
-D_pitch=0
-max_pitch=5
+P_pitch=2
+I_pitch=0.0
+D_pitch=0.0
+max_pitch=10
+
+#Variable for the PID thrust 
+P_thrust=1.5
+I_thrust=0.0
+D_thrust=0.0
+max_thrust=0.3
+min_thrust=-0.1 #system just needs to lower from the hover state 
 
 #Debuggin, testing 1 point
 target_pose=np.array([0.0,0.0,0.0])
@@ -36,18 +44,18 @@ target_pose=np.array([0.0,0.0,0.0])
 
 #should be independent for roll, pitch 
 class PID:   
-    def __init__(self,P,I,D,max): #define the PID for each axis, and the maximum rate
+    def __init__(self,P,I,D,max,min): #define the PID for each axis, and the maximum rate
         self.kp=P
-        self.kd=I
-        self.ki=D
+        self.ki=I
+        self.kd=D
         self.max=max
-        self.targetPos=0
-        self.error=0
+        self.min=min
+        self.targetPos=0.0
+        self.error=0.0
         #Clear the values of the PID
         self.reset_values()
     
     def reset_values(self):
-        self.SetPoint = 0.0
         self.PTerm = 0.0
         self.ITerm = 0.0
         self.DTerm = 0.0
@@ -76,11 +84,13 @@ class PID:
         
         #Bound angles to [-max,max]
         if output_command>=self.max:
-            self.output=self.max
-        if output_command<=-self.max:
-            self.output=-self.max
-        else:
-            self.output=output_command
+            # print ('Max',self.max,output_command)
+            output_command=self.max
+        if output_command<=self.min:
+            # print ('Min',self.max,output_command)
+            output_command=self.min
+        
+        self.output=output_command
 
         
     def setTargetPosition(self, targetPos):
@@ -97,24 +107,31 @@ class Control:
         self.roll=0
         self.pitch=0
         self.yaw=0
-        self.thrust=0.5 #mantain height
-        self.quartenion_rot=[0.0,0.0,0.0,0.0]#maybe numpy array problem 
+        self.thrust=0.0 #mantain height
+        self.hover=0.707 #for simulation confirm with actual drone 
+        self.quatenion_rot=[0.0,0.0,0.0,0.0]#maybe numpy array problem 
 
         #State flags 
         self.reached=False
-        #Positions and Setpoints from mocap, and targerws        
+        #Positions and Setpoints from mocap, and targerws    
+        #Mavros State
+        self.state=State()
+        self.offboard_mode=False
+
+        #Debugging Topics
+        self.plot=Vector3()    
                
         self.current_pose=PoseStamped()
         self.attitude_setpoints=AttitudeTarget()
         self.attitude_setpoints.header=Header()
         self.attitude_setpoints.body_rate=Vector3()
         self.attitude_setpoints.header.frame_id="base_foorprint"
-        self.attitude_setpoints.orientation = Quaternion(*quaternion_from_euler(-0.25,0.15,0))
-        self.attitude_setpoints.thrust=0.5
+        self.attitude_setpoints.orientation = Quaternion(*quaternion_from_euler(0,0,0))
+        self.attitude_setpoints.thrust=self.hover
         self.attitude_setpoints.type_mask=7 #ignore body rates
-        
         self.pos_x=0.0
         self.pos_y=0.0
+        self.pos_z=0.0
 
     #Use to change between control modes
     def rc_callback(self,msg):
@@ -128,22 +145,28 @@ class Control:
             self.mode_position=False
             self.mode_attitude=True 
 
-    def commands(self,roll_cmd,pitch_cmd,stamp):
-        self.roll=roll_cmd
-        self.pitch=pitch_cmd
+    def commands(self,roll_cmd,pitch_cmd,yaw_cmd,thrust_cmd,stamp):
+        #update stamp
         self.attitude_setpoints.header.stamp=stamp
+        #Attitude commands, convert to radians
+        # print(roll_cmd,pitch_cmd,yaw_cmd)
+        self.roll=roll_cmd*pi/180
+        self.pitch=pitch_cmd*pi/180
+        self.yaw=yaw_cmd*pi/180
+        #Fixed 
         self.attitude_setpoints.body_rate.x=0
         self.attitude_setpoints.body_rate.y=0
         self.attitude_setpoints.body_rate.z=0
-
-
+        #Thrust command [0,1] test + hover state ~0.67
+        self.attitude_setpoints.thrust=self.hover +thrust_cmd
 
     def send_attitude(self):
-        self.quartenion_rot=quaternion_from_euler(self.roll,self.pitch,self.yaw)
-        self.attitude_setpoints.orientation.x=self.quartenion_rot[0]
-        self.attitude_setpoints.orientation.y=self.quartenion_rot[1]
-        self.attitude_setpoints.orientation.z=self.quartenion_rot[2]
-        self.attitude_setpoints.orientation.w=self.quartenion_rot[3]
+        self.quaternion_rot=quaternion_from_euler(self.roll,self.pitch,self.yaw)
+        # print(self.quaternion_rot)
+        self.attitude_setpoints.orientation.x=self.quaternion_rot[0]
+        self.attitude_setpoints.orientation.y=self.quaternion_rot[1]
+        self.attitude_setpoints.orientation.z=self.quaternion_rot[2]
+        self.attitude_setpoints.orientation.w=self.quaternion_rot[3]
         
         #print(self.attitude_setpoints)
         return self.attitude_setpoints
@@ -154,42 +177,96 @@ class Control:
         self.current_pose=msg
         self.pos_x=self.current_pose.pose.position.x
         self.pos_y=self.current_pose.pose.position.y
+        self.pos_z=self.current_pose.pose.position.z
+    
+    #UAV State[armed,connected, guided,manual_input,mode]
+    def state_callback(self,msg):
+        self.state=msg
+        if (self.state.mode=='OFFBOARD'):
+            self.offboard_mode=True
+        else:
+            self.offboard_mode=False
+
+
+
+    def plot_data(self,p1,p2,p3):
+        self.plot.x=p1
+        self.plot.y=p2
+        self.plot.z=p3
+        return self.plot
+
 
 
 def main():
     global P_roll,I_roll,D_roll,max_roll
     global P_pitch,I_pitch,D_pitch,max_pitch
+    global P_thrust,I_thrust,D_thrust,max_thrust
     global target_pose
     stamp=0
+    #For checking fixed orientations only. Comment out  when not needed
+    yaw_test=90 #value in degress, depends positioning method [in mocap facing towards the front] 
 
     #Start the node
     rospy.init_node('Offboard_Attitude',anonymous=True)
     control=Control()
-    roll_cmd=PID(P_roll,I_roll,D_roll,max_roll)
-    pitch_cmd=PID(P_pitch,I_pitch,D_pitch,max_pitch)
+    roll_cmd=PID(P_roll,I_roll,D_roll,max_roll,-max_roll)
+    pitch_cmd=PID(P_pitch,I_pitch,D_pitch,max_pitch,-max_pitch)
+    thrust_cmd=PID(P_thrust,I_thrust,D_thrust,max_thrust,min_thrust)
     ##Reset values
     roll_cmd.reset_values()
     pitch_cmd.reset_values()
+    thrust_cmd.reset_values()
+
     pub = rospy.Publisher("mavros/setpoint_raw/attitude",AttitudeTarget,queue_size=1)
+    pub_plot=rospy.Publisher("plot_data",Vector3,queue_size=1)
     rospy.Subscriber('/mavros/rc/in', RCIn, control.rc_callback, queue_size=1)
     rospy.Subscriber('mavros/local_position/pose', PoseStamped,control.pose_callback,queue_size=1)
+    rospy.Subscriber('mavros/state',State,control.state_callback,queue_size=1)
+    
     #Test for 1 point 
-    target_pose[0]=control.pos_x +0.5
+    while (control.pos_z==0.0):
+        print('Waiting for postion estimate')
+    print('Position received')
+    target_pose[0]=control.pos_x #+0.5
     target_pose[1]=control.pos_y #+0.5
+    target_pose[2]=5 #mantain height 
 
     rate = rospy.Rate(100) # 
     while not rospy.is_shutdown():
-        # if(control.pos_x!=0.00):
-        #Check current position
-        roll_cmd.update(control.pos_y)
-        pitch_cmd.update(control.pos_x)
-        roll_cmd.setTargetPosition(target_pose[1])
-        pitch_cmd.setTargetPosition(target_pose[0])
-        print(target_pose[1],target_pose[0],roll_cmd.output,pitch_cmd.output)
-        #print(control.attitude_setpoints)
+        if (control.offboard_mode):   
+            # if(control.pos_x!=0.00):
+            #Send desired position
+            roll_cmd.setTargetPosition(target_pose[1])
+            pitch_cmd.setTargetPosition(-target_pose[0])
+            thrust_cmd.setTargetPosition(target_pose[2])
+            #Check current position
+            roll_cmd.update(control.pos_y)
+            pitch_cmd.update(control.pos_x)
+            thrust_cmd.update(control.pos_z)
+            # print(target_pose[1],target_pose[0],roll_cmd.output,pitch_cmd.output)
+            #print(control.attitude_setpoints)
+             #send attitude commands 
+            # print(roll_cmd.output,pitch_cmd.output,thrust_cmd.output)
+            # print('Current Altitude',control.pos_z,'Altitude target',target_pose[2],'P_error',thrust_cmd.PTerm,
+            #       'Command',thrust_cmd.output,'thrust',control.attitude_setpoints.thrust)
+            # print('Pterm',thrust_cmd.PTerm,'Item',thrust_cmd.ITerm,'Dterm',thrust_cmd.DTerm,'CMD',control.attitude_setpoints.thrust)
+
+        else:
+            roll_cmd.reset_values()
+            pitch_cmd.reset_values()
+            thrust_cmd.reset_values()
         stamp=rospy.Time.now()  # stamp should update
-        control.commands(roll_cmd.output,pitch_cmd.output,stamp)
+
+        #####################################################################################
+        #####################3Full Controller############
+        control.commands(roll_cmd.output,pitch_cmd.output,yaw_test,thrust_cmd.output,stamp)
+        #####################################################################################
+        #For testing a fixed height and no rotation
+        # control.commands(roll_test,pitch_test,yaw_test,thrust_cmd.output,stamp)
+
         pub.publish(control.send_attitude())
+        pub_plot.publish(control.plot_data(target_pose[0],control.pos_x,pitch_cmd.output))
+        print('Pitch',pitch_cmd.output)
         rate.sleep()
             
 ################################################
