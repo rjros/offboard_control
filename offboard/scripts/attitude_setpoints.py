@@ -24,12 +24,12 @@ from mavros_msgs.srv import *
 P_roll=0.0
 I_roll=0.0
 D_roll=0
-max_roll=2
+max_roll=1.5
 #Variable for the PID pitch 
 P_pitch=0.0
 I_pitch=0.0
 D_pitch=0
-max_pitch=2
+max_pitch=1.5
 
 #Variable for the PID thrust 
 P_thrust=0.1
