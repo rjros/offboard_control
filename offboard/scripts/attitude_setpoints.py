@@ -29,7 +29,7 @@ max_roll=1.5
 P_pitch=0.0
 I_pitch=0.0
 D_pitch=0
-max_pitch=1.5
+max_pitch=2
 
 #Variable for the PID thrust 
 P_thrust=0.1
