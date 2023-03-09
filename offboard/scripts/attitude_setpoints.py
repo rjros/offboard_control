@@ -21,24 +21,24 @@ from mavros_msgs.msg import *
 from mavros_msgs.srv import *
 
 #Variable for the PID ROlL
-P_roll=0
+P_roll=0.0
 I_roll=0.0
-D_roll=0.0
-max_roll=10
+D_roll=0
+max_roll=2
 #Variable for the PID pitch 
-P_pitch=2
+P_pitch=0.0
 I_pitch=0.0
-D_pitch=0.0
-max_pitch=10
+D_pitch=0
+max_pitch=2
 
 #Variable for the PID thrust 
-P_thrust=1.5
+P_thrust=0.1
 I_thrust=0.0
 D_thrust=0.0
-max_thrust=0.3
-min_thrust=-0.1 #system just needs to lower from the hover state 
+max_thrust=0.01
+min_thrust=-0.001 #system just needs to lower from the hover state 
 
-#Debuggin, testing 1 point
+#Debugging, testing 1 point
 target_pose=np.array([0.0,0.0,0.0])
 
 
@@ -108,7 +108,7 @@ class Control:
         self.pitch=0
         self.yaw=0
         self.thrust=0.0 #mantain height
-        self.hover=0.707 #for simulation confirm with actual drone 
+        self.hover=0.67 #for simulation confirm with actual drone 
         self.quatenion_rot=[0.0,0.0,0.0,0.0]#maybe numpy array problem 
 
         #State flags 
@@ -167,6 +167,7 @@ class Control:
         self.attitude_setpoints.orientation.y=self.quaternion_rot[1]
         self.attitude_setpoints.orientation.z=self.quaternion_rot[2]
         self.attitude_setpoints.orientation.w=self.quaternion_rot[3]
+
         
         #print(self.attitude_setpoints)
         return self.attitude_setpoints
@@ -187,16 +188,11 @@ class Control:
         else:
             self.offboard_mode=False
 
-
-
     def plot_data(self,p1,p2,p3):
         self.plot.x=p1
         self.plot.y=p2
         self.plot.z=p3
         return self.plot
-
-
-
 def main():
     global P_roll,I_roll,D_roll,max_roll
     global P_pitch,I_pitch,D_pitch,max_pitch
@@ -204,7 +200,11 @@ def main():
     global target_pose
     stamp=0
     #For checking fixed orientations only. Comment out  when not needed
-    yaw_test=90 #value in degress, depends positioning method [in mocap facing towards the front] 
+    roll_test=0
+    pitch_test=0
+    yaw_test=90 #value in degrees, depends positioning method [in mocap facing towards the front] 
+    ############################################################################################
+    ###Test with yaw of the imu 
 
     #Start the node
     rospy.init_node('Offboard_Attitude',anonymous=True)
@@ -229,7 +229,7 @@ def main():
     print('Position received')
     target_pose[0]=control.pos_x #+0.5
     target_pose[1]=control.pos_y #+0.5
-    target_pose[2]=5 #mantain height 
+    target_pose[2]=0.6 #mantain height depends motor
 
     rate = rospy.Rate(100) # 
     while not rospy.is_shutdown():
@@ -237,7 +237,7 @@ def main():
             # if(control.pos_x!=0.00):
             #Send desired position
             roll_cmd.setTargetPosition(target_pose[1])
-            pitch_cmd.setTargetPosition(-target_pose[0])
+            pitch_cmd.setTargetPosition(target_pose[0])
             thrust_cmd.setTargetPosition(target_pose[2])
             #Check current position
             roll_cmd.update(control.pos_y)
@@ -259,14 +259,14 @@ def main():
 
         #####################################################################################
         #####################3Full Controller############
-        control.commands(roll_cmd.output,pitch_cmd.output,yaw_test,thrust_cmd.output,stamp)
+        # control.commands(roll_cmd.output,pitch_cmd.output,yaw_cmd,thrust_cmd.output,stamp)
         #####################################################################################
         #For testing a fixed height and no rotation
-        # control.commands(roll_test,pitch_test,yaw_test,thrust_cmd.output,stamp)
+        control.commands(roll_test,pitch_test,yaw_test,thrust_cmd.output,stamp)
 
         pub.publish(control.send_attitude())
-        pub_plot.publish(control.plot_data(target_pose[0],control.pos_x,pitch_cmd.output))
-        print('Pitch',pitch_cmd.output)
+        pub_plot.publish(control.plot_data(target_pose[2],control.pos_z,control.attitude_setpoints.thrust))
+        #print('Pterm',thrust_cmd.PTerm,'P output',thrust_cmd.output,'CMD',control.attitude_setpoints.thrust)
         rate.sleep()
             
 ################################################
