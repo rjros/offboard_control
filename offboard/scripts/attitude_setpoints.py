@@ -4,7 +4,7 @@
 # Date: 2023-02-22
 ################################################
 # Tasks:
-#Attitude setpoint test
+#Attitude setpoints test
 ################################################
 import time
 import rospy
@@ -37,6 +37,9 @@ I_thrust=0.0
 D_thrust=0.0
 max_thrust=0.1
 min_thrust=-0.1 #system just needs to lower from the hover state 
+
+#Max angle in degrees for stick control roll,pitch and yaw 
+max_angle=35
 
 #Debugging, testing 1 point
 target_pose=np.array([0.0,0.0,0.0])
@@ -104,7 +107,7 @@ class Control:
         self.pitch_select_channel=2#reverse channel in code
         self.altitude_select_channel=3
         self.yaw_select_channel=4
-        self.mode_select_channel=9
+        self.mode_select_channel=8
         #Use the RC sticks to control the drone for debugging or semi-autonomous work
         self.mode_select=0   #Choose between the attitude controller ,the position setpoint controller and position hold (not implemented)
         self.roll_channel=0  #1082-1921
@@ -118,7 +121,7 @@ class Control:
         self.yaw=0
         self.thrust=0.0 #maintain height
         self.hover=0.55 #for simulation confirm with actual drone 
-        self.angle=5 #maximum tilt angle
+        self.angle=10 #maximum tilt angle
         self.quatenion_rot=[0.0,0.0,0.0,0.0]#maybe numpy array problem 
 
         #State flags 
@@ -143,6 +146,10 @@ class Control:
         self.pos_y=0.0
         self.pos_z=0.0
     
+    #use for setting additional control parameters
+    def parameters(self,max_angle):
+        self.angle=max_angle
+    
     def map(self,OldValue, OldMin, OldMax, NewMin, NewMax):
         return (((OldValue - OldMin) * (NewMax - NewMin)) / (OldMax - OldMin)) + NewMin
     
@@ -150,7 +157,7 @@ class Control:
     def rc_callback(self,msg):
         # 3 Pos switches 1094-1514-1934
         self.RCin=msg.channels
-
+        self.mode_select=self.RCin[self.mode_select_channel-1]
         self.roll_channel=self.map(self.RCin[self.roll_select_channel-1],1082,1921,-self.angle,self.angle)
         self.pitch_channel=self.map(self.RCin[self.pitch_select_channel-1],1079,1919,-self.angle,self.angle)
         self.yaw_channel=self.map(self.RCin[self.yaw_select_channel-1],1082,1921,-self.angle,self.angle)
@@ -171,16 +178,20 @@ class Control:
         #update stamp
         self.attitude_setpoints.header.stamp=stamp
         
-        ##Attitude commands, convert to radians##
-        # self.roll=roll_cmd*pi/180
-        # self.pitch=pitch_cmd*pi/180
-        # self.yaw=yaw_cmd*pi/180
-        
-        ##Using values from the stick##
-        self.roll=self.roll_channel*pi/180
-        self.pitch=-self.pitch_channel*pi/180
-        self.yaw= 90*pi/180#+self.yaw_channel*pi/180
+        if (self.mode_select < 1400):
+            ##Using values from the stick##
+            self.roll=self.roll_channel*pi/180
+            self.pitch=-self.pitch_channel*pi/180
+            self.yaw= 90*pi/180 #+self.yaw_channel*pi/180
+            print(self.roll_channel,self.pitch_channel,self.yaw_channel)
+        else:  
+        ##Fixed value or value from PID##
+            self.roll=0 #roll_cmd
+            self.pitch=0 #pitch_cmd
+            self.yaw= 90*pi/180  #yaw_cmd
+       
         # print(self.roll,self.pitch,self.yaw)
+
         ##Fixed##
         self.attitude_setpoints.body_rate.x=0
         self.attitude_setpoints.body_rate.y=0
@@ -227,18 +238,18 @@ def main():
     global P_roll,I_roll,D_roll,max_roll
     global P_pitch,I_pitch,D_pitch,max_pitch
     global P_thrust,I_thrust,D_thrust,max_thrust
-    global target_pose
+    global target_pose,max_angle
     stamp=0
     #For checking fixed orientations only. Comment out  when not needed
-    roll_test=0
-    pitch_test=0
-    yaw_test=90 #value in degrees, depends positioning method [in mocap facing towards the front] 
+    roll_test=0.0
+    pitch_test=0.0
+    yaw_test=90.0 #value in degrees, depends positioning method [in mocap facing towards the front] 
     ############################################################################################
-    ###Test with yaw of the imu 
-
     #Start the node
     rospy.init_node('Offboard_Attitude',anonymous=True)
     control=Control()
+    control.parameters(max_angle)
+    ##PID Setup##
     roll_cmd=PID(P_roll,I_roll,D_roll,max_roll,-max_roll)
     pitch_cmd=PID(P_pitch,I_pitch,D_pitch,max_pitch,-max_pitch)
     thrust_cmd=PID(P_thrust,I_thrust,D_thrust,max_thrust,min_thrust)
@@ -248,15 +259,18 @@ def main():
     thrust_cmd.reset_values()
 
     pub = rospy.Publisher("mavros/setpoint_raw/attitude",AttitudeTarget,queue_size=1)
-    #pub_plot=rospy.Publisher("plot_data",Vector3,queue_size=1)
     rospy.Subscriber('/mavros/rc/in', RCIn, control.rc_callback, queue_size=1)
     rospy.Subscriber('mavros/local_position/pose', PoseStamped,control.pose_callback,queue_size=1)
     rospy.Subscriber('mavros/state',State,control.state_callback,queue_size=1)
+
+    #Use for debugging 
+    #pub_plot=rospy.Publisher("plot_data",Vector3,queue_size=1)
     
     #Test for 1 point 
-    while (control.pos_z==0.0):
-        print('Waiting for postion estimate')
-    print('Position received')
+    # while (control.pos_z==0.0):
+    #     # print('Waiting for postion estimate')
+    #     pass
+    # print('Position received')
     target_pose[0]=control.pos_x #+0.5
     target_pose[1]=control.pos_y #+0.5
     target_pose[2]=control.pos_z #maintain height depends motor
