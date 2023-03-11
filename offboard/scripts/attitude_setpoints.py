@@ -267,10 +267,10 @@ def main():
     #pub_plot=rospy.Publisher("plot_data",Vector3,queue_size=1)
     
     #Test for 1 point 
-    # while (control.pos_z==0.0):
-    #     # print('Waiting for postion estimate')
-    #     pass
-    # print('Position received')
+    while (control.pos_z==0.0):
+        print('Waiting for position estimate')
+        pass
+    print('Position received')
     target_pose[0]=control.pos_x #+0.5
     target_pose[1]=control.pos_y #+0.5
     target_pose[2]=control.pos_z #maintain height depends motor
