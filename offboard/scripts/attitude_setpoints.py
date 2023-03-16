@@ -1,11 +1,20 @@
 #!/usr/bin/env python3
 ################################################
-# Author: Ricardo Rosales
-# Date: 2023-02-22
-################################################
 # Tasks:
-#Attitude setpoints test
+#-Sends Attitude commands test
+#-Allows the use of the rc during offboard mode
 ################################################
+###########################################################################
+__author__ = "Ricardo Rosales, Hannibal Paul, and Borwonpob Sumetheeprasit"
+__copyright__ = "-"
+__credits__ = ["-"]
+__license__ = "-"
+__version__ = "1.0.1"
+__maintainer__ = "- "
+__email__ = " -"
+__status__ = "-"
+###########################################################################
+
 import time
 import rospy
 import numpy as np
@@ -183,7 +192,7 @@ class Control:
             self.roll=self.roll_channel*pi/180
             self.pitch=-self.pitch_channel*pi/180
             self.yaw= 90*pi/180 #+self.yaw_channel*pi/180
-            print(self.roll_channel,self.pitch_channel,self.yaw_channel)
+            #print(self.roll_channel,self.pitch_channel,self.yaw_channel)
         else:  
         ##Fixed value or value from PID##
             self.roll=0 #roll_cmd
