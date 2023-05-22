@@ -128,7 +128,7 @@ class Control:
         self.pitch=0
         self.yaw=0
         self.thrust=0.0 #maintain height
-        self.hover=0.55 #for simulation confirm with actual drone 
+        self.hover=0.707 #for simulation confirm with actual drone 
         self.angle=10 #maximum tilt angle
         self.quatenion_rot=[0.0,0.0,0.0,0.0]#maybe numpy array problem 
 
@@ -186,17 +186,20 @@ class Control:
         #update stamp
         self.attitude_setpoints.header.stamp=stamp
         
-        if (self.mode_select < 1400):
-            ##Using values from the stick##
-            self.roll=self.roll_channel*pi/180
-            self.pitch=-self.pitch_channel*pi/180
-            self.yaw= 90*pi/180 #+self.yaw_channel*pi/180
-            #print(self.roll_channel,self.pitch_channel,self.yaw_channel)
-        else:  
-        ##Fixed value or value from PID##
-            self.roll=0 #roll_cmd
-            self.pitch=0 #pitch_cmd
-            self.yaw= 90*pi/180  #yaw_cmd
+        # if (self.mode_select < 1400):
+        #     ##Using values from the stick##
+        #     self.roll=self.roll_channel*pi/180
+        #     self.pitch=-self.pitch_channel*pi/180
+        #     self.yaw= 90*pi/180 #+self.yaw_channel*pi/180
+        #     #print(self.roll_channel,self.pitch_channel,self.yaw_channel)
+        # else:  
+        # ##Fixed value or value from PID##
+        #     self.roll=0 #roll_cmd
+        #     self.pitch=0 #pitch_cmd
+        #     self.yaw= 90*pi/180  #yaw_cmd
+        self.roll=0 #roll_cmd
+        self.pitch=0 #pitch_cmd
+        self.yaw= 90*pi/180  #yaw_cmd
        
         # print(self.roll,self.pitch,self.yaw)
 
@@ -206,7 +209,7 @@ class Control:
         self.attitude_setpoints.body_rate.z=0
         ##Thrust command [0,1] test + hover state ~0.67##
         # self.attitude_setpoints.thrust=self.hover + thrust_cmd
-        self.attitude_setpoints.thrust=self.hover + self.altitude_channel
+        self.attitude_setpoints.thrust=self.hover #+ self.altitude_channel
 
 
     def send_attitude(self):
